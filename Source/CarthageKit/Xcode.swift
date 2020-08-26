@@ -360,6 +360,7 @@ private func copyBCSymbolMapsForBuildProductIntoDirectory(_ directoryURL: URL, _
 
 private func stripSimulatorARM64(_ packageURL: URL) -> SignalProducer<(), CarthageError> {
 	return architecturesInPackage(packageURL)
+        .collect()
 		.flatMap(.merge) { archs -> SignalProducer<(), CarthageError> in
 			if archs.contains("arm64") && archs.contains("x86_64") {
 				return stripBinary(packageURL, keepingArchitectures: ["i386", "x86_64"])
@@ -387,10 +388,9 @@ private func mergeExecutables(_ executableURLs: [URL], _ outputURL: URL) -> Sign
 			let lipoTask = Task("/usr/bin/xcrun", arguments: [ "lipo", "-create" ] + executablePaths + [ "-output", outputURL.path ])
 
 			return stripSimulatorARM64(URL(fileURLWithPath: executablePaths.last!).deletingLastPathComponent())
-				.flatMap(.merge) { _ in
-					lipoTask.launch()
-						.mapError(CarthageError.taskError)
-				}
+				.then(lipoTask.launch()
+					.mapError(CarthageError.taskError)
+				)
 		}
 		.then(SignalProducer<(), CarthageError>.empty)
 }
