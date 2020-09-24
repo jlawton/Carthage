@@ -1066,7 +1066,7 @@ private func stripBinary(_ binaryURL: URL, keepingArchitectures: [String]) -> Si
 
   let fileManager = FileManager.default.reactive
   
-  let createTempDir: SignalProducer<URL, CarthageError> = fileManager.createTemporaryDirectoryWithTemplate("carthage-lipo-XXXXXX")
+  let createTempDir: SignalProducer<URL, CarthageError> = fileManager.createTemporaryDirectoryWithTemplate("carthage-lipo-XXXXXX", destinationURL: binaryURL)
   
   let copyItem: (URL, URL) -> SignalProducer<URL, CarthageError> = { source, dest in
     fileManager.copyItem(source, into: dest)
@@ -1080,7 +1080,20 @@ private func stripBinary(_ binaryURL: URL, keepingArchitectures: [String]) -> Si
   }
   
   let replace: (URL, URL) -> SignalProducer<(), CarthageError> = { original, modified in
-    return fileManager.replaceItem(at: original, withItemAt: modified)
+    do {
+      let originalVolumeNumber = try FileManager.default.attributesOfFileSystem(forPath: original.deletingLastPathComponent().path)[.systemNumber] as? Int
+      let modifiedVolumeNumber = try FileManager.default.attributesOfFileSystem(forPath: modified.deletingLastPathComponent().path)[.systemNumber] as? Int
+      if originalVolumeNumber == modifiedVolumeNumber {
+        return fileManager.replaceItem(at: original, withItemAt: modified)
+      } else {
+        if FileManager.default.fileExists(atPath: original.path) {
+          try FileManager.default.removeItem(at: original)
+        }
+        return fileManager.copyItem(modified, into: original).map { _ in () }
+      }
+    } catch {
+      return .init(error: .internalError(description: error.localizedDescription))
+    }
   }
   
   return createTempDir
